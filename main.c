@@ -2,17 +2,69 @@
 #include <rc_usefulincludes.h> 
 #include <roboticscape.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <termios.h>
 void on_pause_pressed();
 void on_pause_released();
 
 
-int get_ultrasonic_cm();
+int get_ultrasonic1_cm();
+int get_ultrasonic2_cm();
 
 int init_success;
 int byte_write_success;
-int ultrasonic_cm;
+int ultrasonic1_cm;
+int ultrasonic2_cm;
 float motorstate1;
 float motorstate2;
+char letter;
+
+
+static struct termios old, new;
+
+/* Initialize new terminal i/o settings */
+void initTermios(int echo) 
+{
+	tcgetattr(0, &old); /* grab old terminal i/o settings */
+	new = old; /* make new settings same as old settings */
+	new.c_lflag &= ~ICANON; /* disable buffered i/o */
+		if (echo) {
+		      new.c_lflag |= ECHO; /* set echo mode */
+		}
+	       	else {
+		      new.c_lflag &= ~ECHO; /* set no echo mode */
+					        }
+		  tcsetattr(0, TCSANOW, &new); /* use these new terminal i/o settings now */
+}
+
+/* Restore old terminal i/o settings */
+void resetTermios(void) 
+{
+	  tcsetattr(0, TCSANOW, &old);
+}
+
+/* Read 1 character - echo defines echo mode */
+char getch_(int echo) 
+{
+	  char ch;
+	    initTermios(echo);
+	      ch = getchar();
+	        resetTermios();
+		  return ch;
+}
+
+/* Read 1 character without echo */
+char getch(void) 
+{
+	  return getch_(0);
+}
+
+/* Read 1 character with echo */
+char getche(void) 
+{
+	  return getch_(1);
+}
 
 int main(){
 
@@ -21,23 +73,16 @@ int main(){
 		return -1;
 	}	
 	
-	printf("\nbingo!!\n");
-	init_success = rc_i2c_init(1, 0x70);
-	if (init_success == 0) {
-		printf("\ni2c successfully initialized\n");
-	}
-	else {
-		printf("\ni2c not initialized\n");
-	}
+	printf("\nRunning main program\n");
 	
-
+	rc_i2c_init(1, 0x71);
+	rc_i2c_init(1, 0x73);
+		
 	rc_enable_motors();
-
+	rc_enable_servo_power_rail();
 	
 	rc_set_pause_pressed_func(&on_pause_pressed);
-	rc_set_pause_released_func(&on_pause_released);
-
-	
+	rc_set_pause_released_func(&on_pause_released);	
 	rc_set_state(RUNNING); 
 
 	while(rc_get_state()!=EXITING) {
@@ -46,24 +91,37 @@ int main(){
 
 			rc_set_led(GREEN, ON);
 			rc_set_led(RED, OFF);
-
-			ultrasonic_cm = get_ultrasonic_cm();			
-			printf("\n%i\n", ultrasonic_cm);
 			
-			motorstate1 = 1.5;
-			motorstate2 = -1.5;
-
-			if (ultrasonic_cm < 30 &&  ultrasonic_cm > 5) {
-				motorstate2 = 0;
+  			letter  = getch();
+  			if (letter == 'w') {
+				rc_set_motor(1, -1.5);
+				rc_set_motor(2, 1.5);
 			}
+			else if (letter == 's') {
+				rc_set_motor(1, 1.5);
+				rc_set_motor(2, -1.5);
+			}
+
+			if (letter == 'a') {
+				rc_send_servo_pulse_us(1, 0.5);
+			}
+			else if (letter == 'd') {
+				rc_send_servo_pulse_us(1, -0.5);
+			}
+
+
+
+			/*
+
+			int encoderPos = rc_get_encoder_pos(1);
+			printf("\nEncoderPos: %i \n", encoderPos);
 			
+			ultrasonic1_cm = get_ultrasonic1_cm();
+			ultrasonic2_cm = get_ultrasonic2_cm();
+			printf("\nSkynjari 1: %i, Skynjari 2: %i", ultrasonic1_cm, ultrasonic2_cm);
 
-			rc_set_motor(4, motorstate1);
-			rc_set_motor(1, motorstate2);
-		
-
-
-
+			*/	
+			
 		}
 
 		else if(rc_get_state()==PAUSED){
@@ -80,11 +138,11 @@ int main(){
 
 
 
-int get_ultrasonic_cm() {
+int get_ultrasonic1_cm() {
 
 	uint8_t i2c_buffer1[1];
 	uint8_t i2c_buffer2[1];
-
+	rc_i2c_set_device_address(1, 0x71);
 	rc_i2c_write_byte(1, 0x00, 0x51);
 	usleep(75000);
 	rc_i2c_read_byte(1, 0x02, i2c_buffer1);
@@ -93,6 +151,21 @@ int get_ultrasonic_cm() {
 	int ultrasonic_cm = (i2c_buffer1[0] << 8) | i2c_buffer2[0];
 	return ultrasonic_cm;
 }
+
+int get_ultrasonic2_cm() {
+
+	uint8_t i2c_buffer1[1];
+	uint8_t i2c_buffer2[1];
+	rc_i2c_set_device_address(1, 0x73);
+	rc_i2c_write_byte(1, 0x00, 0x51);
+	usleep(75000);
+	rc_i2c_read_byte(1, 0x02, i2c_buffer1);
+	rc_i2c_read_byte(1, 0x03, i2c_buffer2);
+
+	int ultrasonic_cm = (i2c_buffer1[0] << 8) | i2c_buffer2[0];
+	return ultrasonic_cm;
+}
+
 
 
 
