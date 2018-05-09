@@ -1,12 +1,17 @@
-
+#include </usr/include/python2.7/Python.h>
 #include <rc_usefulincludes.h> 
 #include <roboticscape.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <termios.h>
-#include "/usr/include/flite/flite.h"
+#include "flite/flite.h"
 #include <stdbool.h>
+#include <math.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <pthread.h>
 //#include "cv.h"
 //#include "highgui.h"
 void on_pause_pressed(); 
@@ -20,34 +25,52 @@ void forward();
 void back();
 void turn_right();
 void turn_left();
+void small_turn_right();
+void small_turn_left();
 void hold();
 
-// manual input functions
+//Threads
+#define NO_OF_THREADS 3
+void *Ultrasonic_thread(void *vargp);
+void *Gyro_thread(void *vargp);
+void *Accel_thread(void *vargp);
+
+
+// Manual input functions
 void initTerminos(int echo);
 void resetTerminos(void);
 char getch_(int echo);
 char getch(void);
 char getche(void);
 
-static struct termios old, new;
+//Global variables
+int cm_left;
+int cm_right;
+float GyroX;
+int cm_left;
+int cm_right;
+float GyroX;
+float AccelX;
+float AccelY;
+rc_imu_data_t accel_data;
+bool GyroDisable = false;
+bool collision = false;
 
+// PYTHON
+void python_file_test(void);
+
+
+static struct termios old, new;
 
 int main(){
 	
-	int cm_left;
-	int cm_right;
-	//int left_wheel_count;
-	//int right_wheel_count;
 	char letter;
 	bool start = true;
 	bool first = true;
-	bool first_accel = true;
-	//cst_voice *v;	
-	rc_imu_data_t accel_data;
-	float currXaccel, currYaccel, currZaccel;
-	float previousXaccel = 0, previousYaccel = 0, previousZaccel = 0;
-	float accelerodata[10000];
 	int counter = 0;
+	//bool first_accel = true;
+	//float currXaccel;
+
 
 	if(rc_initialize()){
 		fprintf(stderr,"ERROR: failed to initialize rc_initialize(), are you root?\n");
@@ -61,18 +84,36 @@ int main(){
 	rc_set_imu_config_to_defaults(&config);
 
        	rc_initialize_imu(&accel_data, config);	
-	//flite_init();
 	rc_i2c_init(1, 0x71);
 	rc_i2c_init(1, 0x73);	
 	rc_enable_motors();
+
+	//Py_SetPythonHome("/usr/local/lib/python2.7");
+	//Py_SetProgramName("/usr/local/lib/python2.7");
+	//char* name = Py_GetPythonHome();
+	//char* prefix = Py_GetPrefix();
+	//printf("Program home: %s", name);
+
+
+	//Py_Initialize();
 	
 	
 	rc_set_pause_pressed_func(&on_pause_pressed);
 	rc_set_pause_released_func(&on_pause_released);	
 	rc_set_state(RUNNING); 
 
+
+	pthread_t thread_id;
+	pthread_create(&thread_id, NULL, Ultrasonic_thread, NULL);
+	pthread_create(&thread_id, NULL, Gyro_thread, NULL);
+	pthread_create(&thread_id, NULL, Accel_thread, NULL);
+
+
+	//python_file_test();
+
 	while(rc_get_state()!=EXITING) {
 		if(rc_get_state()==RUNNING){
+
 			rc_set_led(GREEN, ON);
 			rc_set_led(RED, OFF);
 			
@@ -82,27 +123,64 @@ int main(){
   			letter  = getch();
 			manual_input(letter); */
   			
-			//------------------------------------  	
-			
-			/*
-			v = register_cmu_us_kal();
-			flite_file_to_speech("HELLO",v,"play");
-			
-			left_wheel_count = rc_get_encoder_pos(1);
-			right_wheel_count = rc_get_encoder_pos(2);
-			*/
+			//------------------------------------
 
-	
+		       //printf("\nAccel X: %f, Y: %f, Z: %f", accel_data.accel[0], accel_data.accel[1], accel_data.accel[2]);
+			//python_file_test();
 			
-			//cm_left = get_ultrasonic1_cm();
-			//cm_right = get_ultrasonic2_cm();
+			if (collision == true) {
+				back();
+				
+				if(cm_left < cm_right) {
+					turn_right();
+				} else if(cm_right < cm_left) {
+					turn_left();
+				}
+				collision = false;
+			}
 
-			//printf("\nLeft wheel: %i, Right wheel: %i", left_wheel_count, right_wheel_count); 
+			if ((cm_left < 65 ||cm_right < 65) && (cm_left > 45 ||cm_right > 45))   {
+
+				if (cm_left < cm_right) {
+					small_turn_right();
+				}
+
+				else if (cm_right < cm_left) {
+					small_turn_left();
+				}
+			}
+
+
+			else if ((cm_left < 35 ||cm_right < 35) && (cm_left > 10 ||cm_right > 10)) {		
+					
+				hold();
+				if (cm_left < cm_right) {
+					turn_right();
+				}
+
+				else if (cm_right < cm_left) {
+					turn_left();
+				}
+
+									
+			}
+
+			 if ((GyroX > 65 ||GyroX < -65) && counter > 50) {
+
+				system("flite -t move");
+				back();
+
+				if(cm_left < cm_right) {
+					turn_right();
+				}
+
+				else if(cm_right < cm_left) {
+					turn_left();
+				}
+				counter = 0;
 			
-			//printf("\nLeft sensor: %i, Right sensor: %i", cm_left, cm_right);
-			
+ 			 }	
 	
-			
 			if (start == true) {
 				letter = getch();
 				if (letter == 'w'){
@@ -112,55 +190,19 @@ int main(){
 			
 			
 			if (first == true && start == false) {
-			for (float i = 0; i < 1.5; i+= 0.1) {
-		
-				rc_set_motor(1, i);
-				rc_set_motor(2, -i);
-				usleep(100000);
+
+				for (float i = 0; i < 1.5; i+= 0.1) {
+					rc_set_motor(1, i);
+					rc_set_motor(2, -i);
+					usleep(100000);
 						
-			}
-			first = false;
-			}
-			
-			rc_read_accel_data(&accel_data);
-
-			currXaccel = accel_data.accel[0]*10;
-			currYaccel = accel_data.accel[1]*10;
-			currZaccel = accel_data.accel[2]*10;
-
-			printf("\n %f", currXaccel);			
-
-			/*					
-			
-			if (currXaccel >  previousXaccel + 20 ||currXaccel < previousXaccel - 25)  {
-				
-				back();
-				sleep(1);
-				turn_right();
-				forward();
-			}
-							
-				
-			printf("\n X: %f, Y: %f", previousXaccel, previousYaccel); 
-	
-			printf("\n X: %f, Y: %f", currXaccel, currYaccel); 
-			
-				
-			if ((cm_left < 30 ||cm_right < 30) && (cm_left > 5 ||cm_right > 5) && (start == false)) {
-				
-					
-				hold();
-				if (cm_left < cm_right) {
-					turn_right();
 				}
-				else if (cm_right < cm_left) {
-					turn_left();
-				}
-				
+
+				first = false;
 			}
-				*/
-			
-			forward();	
+															
+			forward();
+			counter++;	
 							
 		}
 
@@ -171,10 +213,61 @@ int main(){
 
 		usleep(100000);
 	}
-		
+	
+	Py_Finalize();	
 	rc_cleanup(); 
 	return 0;
 }
+
+
+void *Ultrasonic_thread(void *vargp) {
+	
+	while(1) {
+
+		cm_left = get_ultrasonic1_cm();
+		cm_right = get_ultrasonic2_cm();
+		usleep(100000);
+	}
+	return NULL;
+	
+}
+
+void *Gyro_thread(void *vargp) {
+
+	while(1) {
+		rc_read_gyro_data(&accel_data);
+		GyroX = accel_data.gyro[2];
+		usleep(100000);
+			
+
+	}
+	return NULL;
+}
+
+void *Accel_thread(void *vargp) {
+	int accel_cnt = 0;
+	float accel_sum = 0.0;
+	
+	while(1) {
+		rc_read_accel_data(&accel_data);
+		AccelX = floor(accel_data.accel[0]*10);
+		AccelY = floor(accel_data.accel[1]*10);
+		if(accel_cnt > 2)
+		{
+			if((accel_sum / accel_cnt) > 50) {
+				printf("\nAcc - X: %f, Y: %f", AccelX, AccelY);
+				system("flite -t Ouch");
+				collision = true;
+			}
+			accel_cnt = 0;
+			accel_sum = 0.0;
+		}
+		accel_sum += AccelX;
+		accel_cnt++;
+		usleep(5000);
+	}
+}
+
 
 void forward() {
 	rc_set_motor(1, 1.5);
@@ -184,20 +277,38 @@ void forward() {
 void back() {
 	rc_set_motor(1, -1.5);
 	rc_set_motor(2, 1.5);
+	usleep(500000);
 }
+
+void small_turn_right() {
+
+	rc_set_motor(1, 1.5);
+	rc_set_motor(2, -0.2);
+	usleep(250000);
+	forward();
+}
+
+void small_turn_left() {
+
+	rc_set_motor(1, 0.2);
+	rc_set_motor(2, -1.5);
+	usleep(250000);	
+	forward();
+}		
+
 
 void turn_right() {
 
 	rc_set_motor(1, 0.2);
 	rc_set_motor(2, 1.5);
-	usleep(850000);
+	usleep(950000);
 }
 
 void turn_left() {
 
 	rc_set_motor(1, -1.5);
 	rc_set_motor(2, -0.2);
-	usleep(850000);
+	usleep(950000);
 }
 
 void hold() {
@@ -295,10 +406,47 @@ char getche(void) {
 }
 
 
+void python_file_test(void) {
+	printf("got here");
+	PyObject *pName, *pModule, *pFunc, *pValue;
 
+	//PySys_SetPath("~/project");
+	//Py_Initialize();
 
+	printf("Im here");
 
+	pName = PyString_FromString("test");
 
+	pModule = PyImport_Import(pName);
+
+	PyObject *pythonArgument;
+	pythonArgument = PyTuple_New(1);
+	pValue = PyString_FromString("justTesting");
+
+	if(pValue == NULL) {
+		printf("Error");
+	}
+
+	PyTuple_SetItem(pythonArgument, 0, pValue);
+
+	//pDict = PyModule_GetDict(pModule);
+
+	pFunc = PyDict_GetItemString(pModule, ("printData"));
+
+	pValue = PyObject_CallObject(pFunc, pythonArgument);
+
+	if (PyCallable_Check(pFunc)) {
+		PyObject_CallObject(pFunc, NULL);
+	}else {
+		PyErr_Print();
+		printf("Errrrrror");
+	}
+
+	Py_DECREF(pModule);
+	Py_DECREF(pName);
+
+	//Py_Finalize();
+}
 
 
 

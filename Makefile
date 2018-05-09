@@ -5,7 +5,7 @@ TARGET = main
 CC		:= gcc
 LINKER		:= gcc -o
 CFLAGS		:= -c -Wall -g
-LFLAGS		:= -lm -lrt -lpthread -lroboticscape
+LFLAGS		:= -lm -lrt -lpthread -lroboticscape -lpython2.7
 
 SOURCES		:= $(wildcard *.c)
 INCLUDES	:= $(wildcard *.h)
