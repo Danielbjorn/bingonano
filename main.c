@@ -27,6 +27,12 @@ void turn_right();
 void turn_left();
 void small_turn_right();
 void small_turn_left();
+void slow_forward();
+void slow_forward_left();
+void slow_forward_right();
+void slow_right();
+void slow_left();
+void bananaDance();
 void hold();
 
 //Threads
@@ -34,7 +40,6 @@ void hold();
 void *Ultrasonic_thread(void *vargp);
 void *Gyro_thread(void *vargp);
 void *Accel_thread(void *vargp);
-
 
 // Manual input functions
 void initTerminos(int echo);
@@ -55,9 +60,12 @@ float AccelY;
 rc_imu_data_t accel_data;
 bool GyroDisable = false;
 bool collision = false;
+bool spinning = false;
+long bananaHunt = 0;
 
 // PYTHON
-void python_file_test(void);
+void *Python_thread(void *vargp);
+bool pyThread = true;
 
 
 static struct termios old, new;
@@ -87,15 +95,22 @@ int main(){
 	rc_i2c_init(1, 0x71);
 	rc_i2c_init(1, 0x73);	
 	rc_enable_motors();
+	
+	//Py_SetPrefix("/usr/local");
+	//char* name = Py_GetExPrefix();
 
-	//Py_SetPythonHome("/usr/local/lib/python2.7");
-	//Py_SetProgramName("/usr/local/lib/python2.7");
-	//char* name = Py_GetPythonHome();
-	//char* prefix = Py_GetPrefix();
-	//printf("Program home: %s", name);
+	//printf("Prefix: %s", name);
+	
+	
 
+	//Py_SetPythonHome("/usr/lib/python2.7");
+	//Py_SetProgramName("/usr/bin/python2.7");
+	//char* path = Py_GetPath();
+	//printf("path: %s", path);
 
-	//Py_Initialize();
+	Py_Initialize();
+		
+	PySys_SetPath("/usr/local/modules");
 	
 	
 	rc_set_pause_pressed_func(&on_pause_pressed);
@@ -107,8 +122,10 @@ int main(){
 	pthread_create(&thread_id, NULL, Ultrasonic_thread, NULL);
 	pthread_create(&thread_id, NULL, Gyro_thread, NULL);
 	pthread_create(&thread_id, NULL, Accel_thread, NULL);
+	pthread_create(&thread_id, NULL, Python_thread, NULL);
 
-
+	//system("aplay knight.wav");
+	//system("^C");
 	//python_file_test();
 
 	while(rc_get_state()!=EXITING) {
@@ -126,46 +143,65 @@ int main(){
 			//------------------------------------
 
 		       //printf("\nAccel X: %f, Y: %f, Z: %f", accel_data.accel[0], accel_data.accel[1], accel_data.accel[2]);
-			//python_file_test();
+		       //system("^C");
+		       //printf("BananaHunt is: %li\n", bananaHunt);
 			
-			if (collision == true) {
-				back();
+			if(bananaHunt == 0) {
+				//printf("Searching\n");
+				//system("aplay knight.wav &");
+			
+				if (collision == true) {
+					GyroDisable = true;
+					back();
 				
-				if(cm_left < cm_right) {
-					turn_right();
-				} else if(cm_right < cm_left) {
-					turn_left();
-				}
-				collision = false;
-			}
-
-			if ((cm_left < 65 ||cm_right < 65) && (cm_left > 45 ||cm_right > 45))   {
-
-				if (cm_left < cm_right) {
-					small_turn_right();
+					if(cm_left < cm_right) {
+						turn_right();
+					} else if(cm_right < cm_left) {
+						turn_left();
+					}
+					collision = false;
+					GyroDisable = false;
 				}
 
-				else if (cm_right < cm_left) {
-					small_turn_left();
+				if ((cm_left < 65 ||cm_right < 65) && (cm_left > 45 ||cm_right > 45))   {
+
+					if (cm_left < cm_right) {
+						small_turn_right();
+					}
+
+					else if (cm_right < cm_left) {
+						small_turn_left();
+					}
 				}
-			}
-
-
-			else if ((cm_left < 35 ||cm_right < 35) && (cm_left > 10 ||cm_right > 10)) {		
-					
-				hold();
-				if (cm_left < cm_right) {
-					turn_right();
-				}
-
-				else if (cm_right < cm_left) {
-					turn_left();
-				}
-
+				else if ((cm_left < 35 ||cm_right < 35) && (cm_left > 10 ||cm_right > 10)) {		
+					GyroDisable = true;
+					hold();
+					if (cm_left < cm_right) {
+						turn_right();
+					}
+					else if (cm_right < cm_left) {
+						turn_left();
+					}
+					GyroDisable = false;
 									
-			}
+				}
 
-			 if ((GyroX > 65 ||GyroX < -65) && counter > 50) {
+				if(spinning) {
+					GyroDisable = true;
+					system("flite -t move");
+					back();
+				
+					if(cm_left < cm_right) {
+						turn_right();
+					}
+					else if(cm_right < cm_left) {
+						turn_left();
+					}
+					spinning = false;
+					GyroDisable = false;
+				}
+/*
+			 if ((GyroX > 60 ||GyroX < -60) && counter > 15) {
 
 				system("flite -t move");
 				back();
@@ -180,32 +216,56 @@ int main(){
 				counter = 0;
 			
  			 }	
-	
-			if (start == true) {
-				letter = getch();
-				if (letter == 'w'){
-					start = false;
-				}	
-			}
-			
-			
-			if (first == true && start == false) {
-
-				for (float i = 0; i < 1.5; i+= 0.1) {
-					rc_set_motor(1, i);
-					rc_set_motor(2, -i);
-					usleep(100000);
-						
+*/
+				if (start == true) {
+					letter = getch();
+					if (letter == 'w'){
+						start = false;
+					}	
 				}
+			
+			
+				if (first == true && start == false) {
 
-				first = false;
-			}
+					for (float i = 0; i < 1.5; i+= 0.1) {
+						rc_set_motor(1, i);
+						rc_set_motor(2, -i);
+						usleep(100000);		
+					}
+					first = false;
+				}
 															
-			forward();
-			counter++;	
+				forward();
+				counter++;	
 							
-		}
+			}
+			else if(bananaHunt == 1) {
+				        slow_forward();
+					printf("slow forw\n");
+			}
+			else if(bananaHunt == 2) {
+				        slow_forward_left();
+					printf("forw left\n");
+			}
+			else if(bananaHunt == 3) {
+				        slow_forward_right();
+					printf("forw right\n");
+			}
+			else if(bananaHunt == 4) {
+				        slow_left();
+					printf("left\n");
+			}
+			else if(bananaHunt == 5) {
+				        slow_right();
+					printf("right\n");
+			}
+			else if(bananaHunt == 6) {
+				        bananaDance();
+					printf("banana dance\n");
+			}
 
+
+		}
 		else if(rc_get_state()==PAUSED){
 			rc_set_led(GREEN, OFF);
 			rc_set_led(RED, ON);
@@ -213,12 +273,14 @@ int main(){
 
 		usleep(100000);
 	}
+	pyThread = false;
+	usleep(100000);
 	
-	Py_Finalize();	
+	Py_Finalize();
+	usleep(100000);	
 	rc_cleanup(); 
 	return 0;
 }
-
 
 void *Ultrasonic_thread(void *vargp) {
 	
@@ -233,16 +295,34 @@ void *Ultrasonic_thread(void *vargp) {
 }
 
 void *Gyro_thread(void *vargp) {
+	int gyro_cnt = 0;
+	float gyro_sum = 0.0;
 
 	while(1) {
-		rc_read_gyro_data(&accel_data);
-		GyroX = accel_data.gyro[2];
-		usleep(100000);
-			
 
+		if(GyroDisable == false) {
+
+			rc_read_gyro_data(&accel_data);
+			GyroX = accel_data.gyro[2]*10;
+			//printf("Gyro: %f\n", GyroX);
+
+			if(gyro_cnt > 6) {
+
+				//printf("AVG gyro: %f \n", (gyro_sum / gyro_cnt));
+				if((gyro_sum / gyro_cnt) > 700 ||(gyro_sum / gyro_cnt) < -700) {
+					spinning = true;
+				}
+				gyro_cnt = 0;
+				gyro_sum = 0.0;
+			}
+			gyro_sum += GyroX;
+			gyro_cnt++;
+			usleep(80000);
+		}	
+
+		}
+		return NULL;
 	}
-	return NULL;
-}
 
 void *Accel_thread(void *vargp) {
 	int accel_cnt = 0;
@@ -254,8 +334,8 @@ void *Accel_thread(void *vargp) {
 		AccelY = floor(accel_data.accel[1]*10);
 		if(accel_cnt > 2)
 		{
-			if((accel_sum / accel_cnt) > 50) {
-				printf("\nAcc - X: %f, Y: %f", AccelX, AccelY);
+			if((accel_sum / accel_cnt) > 80) {
+				//printf("\nAcc - X: %f, Y: %f", AccelX, AccelY);
 				system("flite -t Ouch");
 				collision = true;
 			}
@@ -266,12 +346,18 @@ void *Accel_thread(void *vargp) {
 		accel_cnt++;
 		usleep(5000);
 	}
+	return NULL;
 }
 
 
 void forward() {
 	rc_set_motor(1, 1.5);
 	rc_set_motor(2, -1.5);
+}
+
+void slow_forward() {
+	rc_set_motor(1, 0.25);
+	rc_set_motor(2, -0.25);
 }
 
 void back() {
@@ -288,13 +374,23 @@ void small_turn_right() {
 	forward();
 }
 
+void slow_forward_right() {
+	rc_set_motor(1, 0.25);
+	rc_set_motor(2, -0.1);
+}
+
 void small_turn_left() {
 
 	rc_set_motor(1, 0.2);
 	rc_set_motor(2, -1.5);
 	usleep(250000);	
 	forward();
-}		
+}	
+
+void slow_forward_left() {
+	rc_set_motor(1, 0.1);
+	rc_set_motor(2, -0.25);
+}
 
 
 void turn_right() {
@@ -304,6 +400,11 @@ void turn_right() {
 	usleep(950000);
 }
 
+void slow_right() {
+	rc_set_motor(1, 0.2);
+	rc_set_motor(2, 0);
+}
+
 void turn_left() {
 
 	rc_set_motor(1, -1.5);
@@ -311,10 +412,22 @@ void turn_left() {
 	usleep(950000);
 }
 
+void slow_left() {
+	rc_set_motor(1, 0);
+	rc_set_motor(2, -0.2);
+}
+
 void hold() {
 	rc_set_motor(1, 0);
 	rc_set_motor(2, 0);
 	usleep(100000);
+}
+
+void bananaDance () {
+	rc_set_motor(1, 1.5);
+	rc_set_motor(2, 0);
+	system("aplay minion.wav");
+	sleep(20);
 }
 
 
@@ -406,48 +519,32 @@ char getche(void) {
 }
 
 
-void python_file_test(void) {
-	printf("got here");
-	PyObject *pName, *pModule, *pFunc, *pValue;
+void *Python_thread(void *vargp) {
+	while(pyThread) {
 
-	//PySys_SetPath("~/project");
-	//Py_Initialize();
+		PyRun_SimpleString("import sys; sys.path.append('/usr/lib/python2.7'); sys.path.append('/usr/lib/python2.7/plat-arm-linux-gnueabihf'); sys.path.append('/usr/lib/python2.7/lib-tk'); sys.path.append('/usr/lib/python2.7/lib-old'); sys.path.append('/usr/lib/python2.7/lib-dynload'); sys.path.append('/usr/local/lib/python2.7/dist-packages'); sys.path.append('/usr/local/lib/python2.7/dist-packages/Adafruit_BBIO-1.0.5-py2.7-linux-armv7l.egg'); sys.path.append('/usr/lib/python2.7/dist-packages');");
 
-	printf("Im here");
+		PyObject *pName, *pModule;
+		pName = PyString_FromString("test");
+		pModule = PyImport_Import(pName);
+	
+		
+		PyObject* myFunction = PyObject_GetAttrString(pModule,(char*)"openCV");
+		PyObject* args = PyTuple_Pack(1,PyFloat_FromDouble(2.0));
+		//PyObject* args = PyTuple_Pack(1,PyInt_FromLong(start));
+		PyObject* myResult = PyObject_CallObject(myFunction, args);
 
-	pName = PyString_FromString("test");
+		//double result = PyFloat_AsDouble(myResult);
+		long result = PyInt_AsLong(myResult);
 
-	pModule = PyImport_Import(pName);
+		bananaHunt = result;
 
-	PyObject *pythonArgument;
-	pythonArgument = PyTuple_New(1);
-	pValue = PyString_FromString("justTesting");
+		//printf("Result: %li\n", result);
 
-	if(pValue == NULL) {
-		printf("Error");
 	}
 
-	PyTuple_SetItem(pythonArgument, 0, pValue);
-
-	//pDict = PyModule_GetDict(pModule);
-
-	pFunc = PyDict_GetItemString(pModule, ("printData"));
-
-	pValue = PyObject_CallObject(pFunc, pythonArgument);
-
-	if (PyCallable_Check(pFunc)) {
-		PyObject_CallObject(pFunc, NULL);
-	}else {
-		PyErr_Print();
-		printf("Errrrrror");
-	}
-
-	Py_DECREF(pModule);
-	Py_DECREF(pName);
-
-	//Py_Finalize();
+	return NULL;
 }
-
 
 
 /*******************************************************************************
